@@ -12,6 +12,7 @@ import {
   Sun,
   Moon,
   LogOut,
+  HelpCircle,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { useTheme } from "../context/ThemeContext";
@@ -26,6 +27,7 @@ const NAV_ITEMS = [
   { to: "/reports", label: "Reports", icon: BarChart3 },
   { to: "/teams", label: "Team Management", icon: Users },
   { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/help", label: "Help Guide", icon: HelpCircle },
 ];
 
 export function Layout() {
@@ -75,6 +77,14 @@ export function Layout() {
 
       <div className="flex-1 flex flex-col overflow-hidden">
         <header className="h-14 border-b border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 flex items-center justify-end px-5 gap-3">
+          <NavLink
+            to="/help"
+            className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"
+            aria-label="Help guide"
+            title="Help guide"
+          >
+            <HelpCircle size={18} />
+          </NavLink>
           <button
             onClick={toggleTheme}
             className="p-2 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-300"

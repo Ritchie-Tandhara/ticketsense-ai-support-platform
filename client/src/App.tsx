@@ -12,6 +12,7 @@ import { KnowledgeBase } from "./pages/KnowledgeBase";
 import { Reports } from "./pages/Reports";
 import { TeamManagement } from "./pages/TeamManagement";
 import { Settings } from "./pages/Settings";
+import { Help } from "./pages/Help";
 import { Loading } from "./components/ui";
 
 function ProtectedLayout() {
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/reports" element={<Reports />} />
         <Route path="/teams" element={<TeamManagement />} />
         <Route path="/settings" element={<Settings />} />
+        <Route path="/help" element={<Help />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
