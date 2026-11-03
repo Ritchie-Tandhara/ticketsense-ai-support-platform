@@ -1,0 +1,251 @@
+// TicketSense data model
+// SQLite is used for a zero-install, fully-portable demo (see docs/architecture.md ADR).
+//
+// NOTE: SQLite's Prisma connector does not support native enum types, so
+// enum-like fields are modeled as String columns constrained at the
+// application layer (Zod schemas + TypeScript literal unions in
+// src/types/enums.ts). Valid values are documented next to each field.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  name          String
+  passwordHash  String
+  role          String // SUPER_ADMIN | SUPPORT_MANAGER | SUPPORT_AGENT | READONLY_ANALYST
+  isActive      Boolean  @default(true)
+  teamId        String?
+  team          Team?    @relation(fields: [teamId], references: [id])
+  isSeniorAgent Boolean  @default(false)
+  maxLoad       Int      @default(15)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  ticketsAssigned   Ticket[]           @relation("AssignedAgent")
+  ticketsCreated    Ticket[]           @relation("CreatedBy")
+  messages          TicketMessage[]
+  events            TicketEvent[]
+  recommendationsOn AIRecommendation[] @relation("ReviewedBy")
+  auditLogs         AuditLog[]
+  knowledgeArticles KnowledgeArticle[]
+
+  @@index([teamId])
+  @@index([role])
+}
+
+model Team {
+  id           String   @id @default(cuid())
+  name         String   @unique
+  description  String?
+  isEscalation Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  members           User[]
+  tickets           Ticket[]
+  assignmentRulesTo AssignmentRule[] @relation("TargetTeam")
+}
+
+model TicketCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now())
+
+  tickets         Ticket[]
+  assignmentRules AssignmentRule[] @relation("CategoryCondition")
+}
+
+model Ticket {
+  id           String @id @default(cuid())
+  ticketNumber Int    @unique
+  subject      String
+  description  String
+  status       String @default("NEW") // NEW|OPEN|IN_PROGRESS|PENDING|RESOLVED|CLOSED
+  priority     String @default("MEDIUM") // LOW|MEDIUM|HIGH|CRITICAL
+  sentiment    String? // POSITIVE|NEUTRAL|NEGATIVE|FRUSTRATED
+
+  requesterName  String
+  requesterEmail String
+
+  categoryId String?
+  category   TicketCategory? @relation(fields: [categoryId], references: [id])
+
+  teamId String?
+  team   Team?   @relation(fields: [teamId], references: [id])
+
+  assignedAgentId String?
+  assignedAgent   User?   @relation("AssignedAgent", fields: [assignedAgentId], references: [id])
+
+  createdById String?
+  createdBy   User?   @relation("CreatedBy", fields: [createdById], references: [id])
+
+  reopenCount Int @default(0)
+
+  firstRespondedAt DateTime?
+  resolvedAt       DateTime?
+  closedAt         DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  messages        TicketMessage[]
+  events          TicketEvent[]
+  slaInstance     SLAInstance?
+  recommendations AIRecommendation[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([categoryId])
+  @@index([assignedAgentId])
+  @@index([teamId])
+  @@index([createdAt])
+}
+
+model TicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  authorId  String?
+  author    User?    @relation(fields: [authorId], references: [id])
+  type      String // CUSTOMER_REPLY|AGENT_REPLY|INTERNAL_NOTE
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+}
+
+model TicketEvent {
+  id        String   @id @default(cuid())
+  ticketId  String
+  ticket    Ticket   @relation(fields: [ticketId], references: [id])
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  type      String // e.g. STATUS_CHANGE, ASSIGNMENT, SLA_BREACH, AI_ANALYSIS, NOTE_ADDED, REOPEN
+  message   String
+  metadata  String? // JSON string payload
+  createdAt DateTime @default(now())
+
+  @@index([ticketId])
+  @@index([type])
+}
+
+model SLAPolicy {
+  id                     String   @id @default(cuid())
+  name                   String   @unique
+  priority               String   @unique // LOW|MEDIUM|HIGH|CRITICAL
+  firstResponseTargetMin Int
+  resolutionTargetMin    Int
+  businessHoursOnly      Boolean  @default(true)
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+
+  instances SLAInstance[]
+}
+
+model SLAInstance {
+  id       String @id @default(cuid())
+  ticketId String @unique
+  ticket   Ticket @relation(fields: [ticketId], references: [id])
+
+  slaPolicyId String
+  slaPolicy   SLAPolicy @relation(fields: [slaPolicyId], references: [id])
+
+  firstResponseDueAt DateTime
+  resolutionDueAt    DateTime
+
+  firstResponseBreached Boolean @default(false)
+  resolutionBreached    Boolean @default(false)
+
+  firstResponseMetAt DateTime?
+  resolvedMetAt      DateTime?
+
+  pausedMinutes Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([resolutionDueAt])
+  @@index([firstResponseDueAt])
+}
+
+model AssignmentRule {
+  id        String  @id @default(cuid())
+  name      String
+  order     Int
+  isActive  Boolean @default(true)
+  isDefault Boolean @default(false)
+
+  conditionPriority   String? // LOW|MEDIUM|HIGH|CRITICAL
+  conditionCategoryId String?
+  conditionCategory   TicketCategory? @relation("CategoryCondition", fields: [conditionCategoryId], references: [id])
+
+  strategy     String // ROUND_ROBIN|LEAST_ACTIVE|CATEGORY_BASED|PRIORITY_ESCALATION
+  targetTeamId String?
+  targetTeam   Team?  @relation("TargetTeam", fields: [targetTeamId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([order])
+}
+
+model AIRecommendation {
+  id       String @id @default(cuid())
+  ticketId String
+  ticket   Ticket @relation(fields: [ticketId], references: [id])
+
+  suggestedCategory    String?
+  suggestedSubcategory String?
+  suggestedPriority    String? // LOW|MEDIUM|HIGH|CRITICAL
+  suggestedSentiment   String? // POSITIVE|NEUTRAL|NEGATIVE|FRUSTRATED
+  confidence           Float
+  reasoning            String
+
+  status       String  @default("PENDING") // PENDING|ACCEPTED|REJECTED|EDITED
+  reviewedById String?
+  reviewedBy   User?   @relation("ReviewedBy", fields: [reviewedById], references: [id])
+  editedValue  String? // JSON string if the agent edited the suggestion
+
+  createdAt  DateTime  @default(now())
+  reviewedAt DateTime?
+
+  @@index([ticketId])
+  @@index([status])
+}
+
+model KnowledgeArticle {
+  id          String   @id @default(cuid())
+  title       String
+  body        String
+  tags        String // comma-separated keywords
+  isPublished Boolean  @default(false)
+  authorId    String?
+  author      User?    @relation(fields: [authorId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([isPublished])
+}
+
+model AuditLog {
+  id        String   @id @default(cuid())
+  actorId   String?
+  actor     User?    @relation(fields: [actorId], references: [id])
+  action    String
+  entity    String
+  entityId  String?
+  details   String?
+  createdAt DateTime @default(now())
+
+  @@index([entity])
+  @@index([actorId])
+}
